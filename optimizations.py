@@ -41,7 +41,7 @@ class Reduction:
 
 class HGateReduction(Reduction):
     '''
-    Returns the given DAG with reduced number of Hadamard Gates.
+    Returns the given DAG with reduced number of Hadamard Gates if any reduction is possible.
     '''
 
     def __init__(self, dag: DAGCircuit):
@@ -161,7 +161,7 @@ class HGateReduction(Reduction):
 
 class RzReduction(Reduction):
     '''
-    Returns the given DAG with reduced number of Rz Gates.
+    Returns the given DAG with reduced number of Rz Gates if any reduction is possible.
     '''
 
     def __init__(self, dag: DAGCircuit):
@@ -186,6 +186,8 @@ class RzReduction(Reduction):
             node: DAGNode
             cursor = 0
             for i, node in enumerate(wire_nodes):
+                # The cursor indicates the index of the last merged/cancelled rotation gate
+                # If no cancel/merge was possible, the cursor simply moves forward on the wire by one node
                 if i < cursor:
                     continue
                 if node.name == "rz":
@@ -200,41 +202,59 @@ class RzReduction(Reduction):
         return self.dag
 
     def _search(self, rz_index: int, wire, node: DAGNode) -> int:
-        '''
-        Searches for and returns the end index of the given commuting node corresponding to a RZ operation.
-        '''
+        """
+        Searches for and returns the index of a node which commutes with the given node corresponding to a RZ operation.
+        If a commutation is not possible, the index of the next node on the wire is returned.
+
+        :param rz_index: The index of the node to be commuted
+        :param wire: The wire the node is attached to
+        :param node: The the node to be commuted
+        """
 
         wire_nodes = list(self.dag.nodes_on_wire(wire, True))
         if rz_index < len(wire_nodes):
             wire_nodes = wire_nodes[rz_index + 1:]
             i = 0
             while i < len(wire_nodes):
+                # Look for three nodes ahead to check whether one of the 4 gate commutation rules apply
                 if i + 3 < len(wire_nodes):
                     lookahead_nodes = wire_nodes[i:i + 3]
                     if self._commutes(lookahead_nodes, wire.index):
                         i += 3
                         continue
+                # Check for a commutation with a CNOT Gate
                 if i + 1 < len(wire_nodes) and wire_nodes[i].name == "cx":
                     if wire_nodes[i].qargs[0].index == wire.index:
                         i += 1
                         continue
+                # If a further commutation is not possible but the current node is another rotation gate,
+                # we cancel/merge
                 if wire_nodes[i].name == "rz":
                     angle = wire_nodes[i].op.params[0]
                     self.deleted_nodes.append(node)
                     self.merged_nodes[wire_nodes[i]] = angle + node.op.params[0]
                     return rz_index + i + 2
+                # Commutation is not possible, the search will continue on the next node on the wire
                 return rz_index + 1
-
+        # Commutation is not possible, the search will continue on the next node on the wire
         return rz_index + 1
 
     def _commutes(self, lookahead_nodes, wire_idx) -> bool:
+        """
+        Returns True if the given three nodes correspond to one of the two commutation sequences.
+
+        :param lookahead_nodes: The nodes to be commuted
+        :param wire_idx: The wire index the lookahead_nodes are on
+        """
         names = [node.name for node in lookahead_nodes]
         if names == ["h", "cx", "h"]:
             cx = lookahead_nodes[1]
+            # The target of the CNOT Gate must be on the same wire as other commuting nodes
             if cx.qargs[1].index == wire_idx:
                 return True
         elif names == ["cx", "rz", "cx"]:
             cx_nodes = [lookahead_nodes[0], lookahead_nodes[2]]
+            # The targets of the CNOT Gates must both be on the same wire as other commuting nodes
             if all(cx.qargs[1].index == wire_idx for cx in cx_nodes):
                 return True
         return False
@@ -242,13 +262,22 @@ class RzReduction(Reduction):
 
 class CxReduction(Reduction):
     '''
-    Returns the given DAG with reduced number of Cx Gates.
+    Returns the given DAG with reduced number of Cx Gates if any reduction is possible.
     '''
 
     def __init__(self, dag: DAGCircuit):
         super().__init__(dag)
 
     def apply(self):
+        """
+        The reduction can be applied if there is at least one CNOT Gate which cancels with another CNOT Gate.
+        The cancellation may be applied if the two CNOT Gates are adjacent up to some commutation rules.
+
+        The commutation rules are:
+        - Two adjacent CNOT Gates with the same target qubit commute
+        - Two adjacent CNOT Gates with the same control qubit commute
+        - CNOT (target) - H - CNOT (control) - H = H - CNOT (control) - H - CNOT (target)
+        """
 
         for wire_idx, wire in enumerate(self.dag.wires):
             wire_nodes = self.dag.nodes_on_wire(wire, True)
@@ -276,7 +305,6 @@ class CxReduction(Reduction):
 
             for n in commuted_nodes:
                 self.dag.remove_op_node(n)
-            #    self.frames.append([dag_to_circuit(self.dag).draw(output="mpl")])
 
         return self.dag
 

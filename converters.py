@@ -45,7 +45,6 @@ class Parser:
                     qc.x(qubit)
                 elif len(controls) == 1:
                     qc.cx(controls[0], qubit)
-                # TODO: can controls be bigger than 2?
                 elif len(controls == 2):
                     # qc.ccx(controls[0], controls[1], qubit)
                     self.apply_toffoli_transformation(qc, controls[0], controls[1], qubit)
@@ -54,7 +53,6 @@ class Parser:
                     qc.z(qubit)
                 elif len(controls) == 1:
                     qc.cz(controls[0], qubit)
-                # TODO: can controls be bigger than 2?
                 # TODO: cover also different control sequences, like 110
                 elif len(controls) == 2:
                     # Doubly controlled Z-Gate is converted into a Toffoli Gate with Hadamard transformations

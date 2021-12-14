@@ -18,7 +18,6 @@ dag = circuit_to_dag(input_qc)
 
 # Preserving the order presented in the paper
 routine_dic = {1: "HGateReduction", 2: "RzReduction", 3: "CxReduction"}
-# todo: add 4th routine
 light_optimization = [1, 3, 2, 3, 1, 2, 3, 2]
 
 # Apply the optimization procedure
@@ -30,7 +29,6 @@ for i in range(2):
 
 optimized_qc = dag_to_circuit(dag)
 
-# TODO: Look at the QASM outputs
 assert Statevector.from_instruction(ref_qc).equiv(Statevector.from_instruction(optimized_qc))
 print(input_qc.draw())
 # Draw the quantum circuit after optimization
