@@ -15,7 +15,7 @@ class Reduction:
         """
         Initializes the reduction procedure.
 
-        :param dag: the circuit to be optimized
+        :param dag: The circuit to be optimized
         """
         self.dag = dag
         self.initial_counts = dag.count_ops()
@@ -347,7 +347,7 @@ class CxReduction(Reduction):
         :param target_idx: The target index corresponding to the target qubit of the to-be-commuted node
         :param wire_nodes: The nodes on the wire of the to-be-commuted node
         :param type: The type is 'control' if the to-be-commuted node has its control qubit on the inspected wire;
-         'target' if its target qubit is on the wire instead
+        'target' if its target qubit is on the wire instead
         """
 
         cursor = 0

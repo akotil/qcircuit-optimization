@@ -21,6 +21,7 @@ for i in range(2):
         klass = globals()[routine_dic[routine]]
         reduction = klass(dag)
         dag = reduction.apply()
+        reduction.report()
 
 optimized_qc = dag_to_circuit(dag)
 assert Statevector.from_instruction(input_qc).equiv(Statevector.from_instruction(optimized_qc))
