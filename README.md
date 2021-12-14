@@ -25,7 +25,7 @@ qc = QuantumCircuit(3)
 qc.cx(0, 2)
 qc.h(1)
 
-dag = circuit_to_dag(input_qc)
+dag = circuit_to_dag(qc)
 reduction = HGateReduction(dag)
 dag = reduction.apply()
 ```
