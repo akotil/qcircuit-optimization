@@ -296,6 +296,10 @@ class CxReduction(Reduction):
                         type = "target"
                         other_type = "control"
                     if abs(control - target) == 2 or abs(control - target) == 1:
+                        # We check if the target qubit and the control qubit both commute through their own wires.
+                        # The commutation information (i.e. the found CNOT node which half-commutes with the current
+                        # CNOT node) obtained by the search process for both the target and the control wire
+                        # must be the same for a successful full-commutation
                         res1 = self._search(wire, control, target, node, type, node_idx)
                         other_wire = self.dag.wires[other_wire]
                         res2 = self._search(other_wire, control, target, node, other_type)
@@ -303,14 +307,25 @@ class CxReduction(Reduction):
                             commuted_nodes.append(node)
                             commuted_nodes.append(res1)
 
+            # Remove the CNOT nodes after commutation
             for n in commuted_nodes:
                 self.dag.remove_op_node(n)
 
         return self.dag
 
     def _search(self, wire_idx, control_idx, target_idx, node, type, index=None):
+        """
+        Searches for and returns the node which half-commutes with the given node. Returns None if no commutation
+        is possible.
 
-        # Extract the wire nodes following the given cx node
+        :param wire_idx: The index of the wire which the given CNOT node is on
+        :param control_idx: The wire index corresponding to the control qubit of the to-be-commuted node
+        :param target_idx: The target index corresponding to the target qubit of the to-be-commuted node
+        :param node: The CNOT node to be commuted
+        :param type: The type is 'control' if the to-be-commuted node has its control qubit on the inspected wire;
+        'target' if its target qubit is on the wire instead
+        """
+
         wire_nodes = list(self.dag.nodes_on_wire(wire_idx, True))
         if index is not None and index + 1 != len(wire_nodes):
             wire_nodes = wire_nodes[index + 1:]
@@ -320,12 +335,21 @@ class CxReduction(Reduction):
                     wire_nodes = wire_nodes[idx + 1:]
                     break
         else:
-            # It is the end of the wire, abort
             return None
 
         return self._get_commutation_info(control_idx, target_idx, wire_nodes, type)
 
-    def _get_commutation_info(self, control_idx, target_idx, wire_nodes, type):
+    def _get_commutation_info(self, control_idx, target_idx, wire_nodes, type: str):
+        """
+        Returns the node to be cancelled with if a half-commutation was successful. Returns None otherwise.
+
+        :param control_idx: The wire index corresponding to the control qubit of the to-be-commuted node
+        :param target_idx: The target index corresponding to the target qubit of the to-be-commuted node
+        :param wire_nodes: The nodes on the wire of the to-be-commuted node
+        :param type: The type is 'control' if the to-be-commuted node has its control qubit on the inspected wire;
+         'target' if its target qubit is on the wire instead
+        """
+
         cursor = 0
         while cursor < len(wire_nodes):
             current_node = wire_nodes[cursor]
@@ -339,30 +363,36 @@ class CxReduction(Reduction):
                 other_type = types[0]
                 if current_node_type_dic[type] == type_dic[type] and current_node_type_dic[other_type] != type_dic[
                     other_type]:
-                    # we can commute
+                    # Commute
                     cursor += 1
                     continue
                 elif current_node_type_dic[type] != type_dic[type]:
-                    # we cannot commute
+                    # Cannot commute
                     return None
                 elif target == target_idx and control == control_idx:
-                    # there is a possibility for cancellation
+                    # There is a possibility for cancellation
                     return current_node
             elif current_node.name == "h" and abs(control_idx - target_idx) == 1:
-                # we try to commute if the given node is a small cnot
+                # We try to commute with the third commutation rule
                 if cursor + 2 != len(wire_nodes):
                     lookahead_nodes = wire_nodes[cursor: cursor + 3]
-                    if self._commutes_with_subcircuit(lookahead_nodes, control_idx, target_idx):
+                    if self._commutes(lookahead_nodes, target_idx):
                         cursor += 3
                         continue
             return None
         return None
 
-    def _commutes_with_subcircuit(self, lookahead_nodes, control_idx, target_idx):
+    def _commutes(self, lookahead_nodes, target_idx):
+        """
+        Returns True if the given three nodes correspond to the third commutation rule.
+
+        :param lookahead_nodes: The nodes to be commuted
+        :param target_idx: The wire index of the target qubit of the CNOT Gate to be commuted
+        """
         names = [node.name for node in lookahead_nodes]
         if names == ["h", "cx", "h"]:
             control = lookahead_nodes[1].qargs[0].index
             target = lookahead_nodes[1].qargs[1].index
-            if control == control_idx + 1 and target == target_idx + 1:
+            if control == target_idx and target > control:
                 return True
         return False
