@@ -4,11 +4,27 @@ from qiskit.dagcircuit import DAGCircuit, DAGNode
 
 
 class Reduction:
+    """
+    Base class for the following reduction types: HGateReduction, RzReduction and CxReduction.
+
+    The reduction procedures are all obtained from the following paper: https://doi.org/10.1038/s41534-018-0072-4
+    Only the first three reductions are implemented.
+    """
+
     def __init__(self, dag: DAGCircuit):
+        """
+        Initializes the reduction procedure.
+
+        :param dag: the circuit to be optimized
+        """
         self.dag = dag
         self.initial_counts = dag.count_ops()
 
     def report(self):
+        """
+        Reports the gate count changes in the circuit (if there are any) after the reduction has been applied.
+        """
+
         optimized_counts = self.dag.count_ops()
         for gate in self.initial_counts:
             if gate in optimized_counts:
@@ -18,6 +34,9 @@ class Reduction:
                            optimized_counts[gate]))
             else:
                 print("Successfully eliminated all %d %s gates." % (self.initial_counts[gate], gate))
+
+    def apply(self):
+        raise NotImplementedError("Implement the apply method")
 
 
 class HGateReduction(Reduction):
@@ -35,26 +54,35 @@ class HGateReduction(Reduction):
         - H - P - H
         - H - P† - H
         - H ⊗ H - CNOT - H ⊗ H
+        - H - P - CNOT - P† - H
+        - H - P† - CNOT - P - H
+
+        If a sequence is found, it is replaced by its equivalent sequence which has less Hadamard Gates.
         '''
 
-        # First, remove all redundant Hadamards (i.e. adjacent Hadamard Gates)
+        # First, remove all redundant Hadamard Gates (i.e. cancel adjacent Hadamard Gates)
         for edge in self.dag.edges():
             source, dest, _ = edge
             if source.name == "h" and dest.name == "h":
                 self.dag.remove_op_node(source)
                 self.dag.remove_op_node(dest)
 
-        # Phase Gate transformations
+        # Phase Gate transformations:
+        # H - P - H = P† - H - P†
+        # H - P† - H = P - H - P
         for wire in self.dag.wires:
             wire_nodes = self.dag.nodes_on_wire(wire, True)
             sequence = []
             node: DAGNode
 
+            # Go through every node in the wire to find a valid phase gate sequence
             for node in wire_nodes:
                 if node.name == "h" and sequence == []:
                     sequence.append(node)
                 elif node.name == "h" and len(sequence) == 2:
                     s_gate = sequence[1].op.inverse()
+                    # Substitute the found sequence by the equivalent sequence
+                    # which has reduced number of Hadamard Gates
                     self.dag.substitute_node(sequence[0], sequence[1].op.inverse(), inplace=True)
                     self.dag.substitute_node(sequence[1], HGate(), inplace=True)
                     self.dag.substitute_node(node, s_gate, inplace=True)
@@ -69,12 +97,15 @@ class HGateReduction(Reduction):
                 predecessors = list(self.dag.predecessors(node))
                 successors = list(self.dag.successors(node))
 
+                # For every CNOT Gate, check if all the incoming and outgoing edges of the corresponding operation node
+                # are connected to nodes which correspond to Hadamard Gates
                 self.dag.edges(nodes=[node])
                 found = False
                 if len(predecessors) == 2 and len(predecessors) == 2:
                     if all(pred.name == "h" for pred in predecessors) and all(succ.name == "h" for succ in successors):
                         found = True
 
+                # When the sequence is found, the Hadamard Gates are removed and the CNOT Gate is flipped
                 if found:
                     for pred in predecessors:
                         self.dag.remove_op_node(pred)
@@ -82,16 +113,18 @@ class HGateReduction(Reduction):
                         self.dag.remove_op_node(suc)
                     node.qargs.reverse()
 
-        # TODO: Any number of CNOT Gates
         # H - P - CNOT - P† - H = P† - CNOT - P
-        for wire in self.dag.wires:
+        # H - P† - CNOT - P - H = P - CNOT - P†
+        for wire_idx, wire in enumerate(self.dag.wires):
             wire_nodes = self.dag.nodes_on_wire(wire, True)
             sequence = []
             node: DAGNode
+            # Go through every node in the wire to find a valid phase gate sequence
             for node in wire_nodes:
                 if node.name == "h" and sequence == []:
                     sequence.append(node)
                 elif node.name == "h" and len(sequence) == 4:
+                    # The sequence is found -> remove the Hadamard Gates and invert the Phase Gates inplace
                     self.dag.remove_op_node(sequence[0])
                     self.dag.remove_op_node(node)
                     self.dag.substitute_node(sequence[1], sequence[1].op.inverse(), inplace=True)
@@ -99,7 +132,12 @@ class HGateReduction(Reduction):
                 elif self._is_phase_gate(node) and len(sequence) == 1:
                     sequence.append(node)
                 elif node.name == "cx" and len(sequence) == 2:
-                    sequence.append(node)
+                    # The target of the CNOT node from the sequence must be on the same wire as other nodes
+                    target = node.qargs[1].index
+                    if target == wire_idx:
+                        sequence.append(node)
+                    else:
+                        sequence = []
                 elif len(sequence) == 3 and node.op == sequence[1].op.inverse():
                     sequence.append(node)
                 else:
@@ -131,10 +169,17 @@ class RzReduction(Reduction):
         self.deleted_nodes = []
         self.merged_nodes = {}
 
-    # Rz - H - CNOT - H = H - CNOT - H - Rz
-    # Rz - CNOT - Rz' - CNOT = CNOT - Rz' - CNOT - Rz
-    # Rz - CNOT = CNOT - Rz
     def apply(self):
+        """
+        The reduction can be applied if there is at least one rotation gate which cancels or merges with
+        another rotation gate. The cancellation/merge may be applied if the two rotation gates are adjacent up to
+        some commutation rules.
+
+        The commutation rules are:
+        - Rz - H - CNOT - H = H - CNOT - H - Rz
+        - Rz - CNOT - Rz' - CNOT = CNOT - Rz' - CNOT - Rz
+        - Rz - CNOT = CNOT - Rz
+        """
 
         for wire in self.dag.wires:
             wire_nodes = self.dag.nodes_on_wire(wire, True)
