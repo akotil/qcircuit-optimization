@@ -34,3 +34,6 @@ The optimized circuit may again be obtained via the Qiskit converter `dag_to_cir
 
 In order to obtain information about the reduced gate counts, one can use `reduction.report()` after the reduction has been applied.
 
+# Notes
+
+Currently, the optimization methods work for quantum circuits consisting only of the following gates: H, X, CNOT and Rz (these are the gates which the paper considers). Gates such as T, S, ccZ and Toffoli can also be used in the optimization procedure if one provides the quantum circuit in the Quipper format and uses  `converters.Parser` to convert the input into a `QuantumCircuit`, as the gate transformations are executed there.
