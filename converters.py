@@ -53,7 +53,6 @@ class Parser:
                     qc.z(qubit)
                 elif len(controls) == 1:
                     qc.cz(controls[0], qubit)
-                # TODO: cover also different control sequences, like 110
                 elif len(controls) == 2:
                     # Doubly controlled Z-Gate is converted into a Toffoli Gate with Hadamard transformations
                     qc.h(qubit)
