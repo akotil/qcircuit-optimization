@@ -203,7 +203,6 @@ class TestEquivalences(unittest.TestCase):
         dag = reduction.apply()
         qc_optimized = dag_to_circuit(dag)
 
-        # The circuit should not change
         assert qc_ref == qc_optimized
 
     def test_cx_commutation_1(self):
